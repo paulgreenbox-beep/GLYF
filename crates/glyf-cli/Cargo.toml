@@ -1,0 +1,15 @@
+[package]
+name = "glyf-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GLYF command line tools"
+
+[dependencies]
+glyf-core.workspace = true
+glyf-pack.workspace = true
+
+[[bin]]
+name = "glyf"
+path = "src/main.rs"
+

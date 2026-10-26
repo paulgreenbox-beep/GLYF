@@ -1,0 +1,23 @@
+name: Rust
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select stable Rust
+        run: rustup default stable
+      - name: Check
+        run: cargo check --workspace --all-targets --locked
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Build
+        run: cargo build --workspace --locked

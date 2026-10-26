@@ -1,0 +1,38 @@
+/target/
+# Generated evidence and archival payloads remain available locally, while Git
+# tracks the source, archive manifests, documentation, and the archive tool.
+/reports/evidence/
+/reports/script/
+/reports/all-test-screenshots/
+/reports/archive/cas/
+/reports/archive/containers/
+/reports/archive/staging/
+
+# Public source distribution: local reports remain on disk.
+/reports/
+target/
+/.deps/
+/.idea/
+/.vscode/
+/.env
+/.env.*
+!.env.example
+*.log
+*.tmp
+*.bak
+*.swp
+Thumbs.db
+.DS_Store
+/project.glyf
+/project.glyp
+/projects/
+/integrations/toolkit-uia/Cargo.toml
+/integrations/toolkit-uia/Cargo.lock
+/integrations/toolkit-uia/resources/
+
+# Private integration operators and storage maintenance tools stay local.
+/scripts/archive-cas.ps1
+/scripts/canary-artifact*.mjs
+/scripts/glyf-canary-*
+/scripts/check-glyf-canary-document.mjs
+/.cargo/config.toml

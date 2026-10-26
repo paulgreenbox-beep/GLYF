@@ -1,0 +1,29 @@
+[package]
+name = "glyf-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GLYF Makepad MVP editor"
+
+[dependencies]
+glyf-core.workspace = true
+glyf-pack.workspace = true
+makepad-widgets.workspace = true
+designing-makepad = { git = "https://github.com/paulgreenbox-beep/designing-makepad.git", rev = "396865d7a6b20db85186da7becb1674e6432b9af" }
+
+[target.'cfg(windows)'.dependencies]
+windows-uia = { package = "windows", version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[[bin]]
+name = "glyf-editor"
+path = "src/main.rs"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("toolkit-uia"))'] }
+

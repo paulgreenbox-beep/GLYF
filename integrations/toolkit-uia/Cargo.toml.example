@@ -1,0 +1,31 @@
+# Local-only host. Copy to Cargo.toml, set the Toolkit path and copy the
+# editor resources here as described in docs/development.md.
+[package]
+name = "glyf-editor-toolkit-uia"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[features]
+default = ["toolkit-uia"]
+toolkit-uia = []
+
+[dependencies]
+glyf-core = { path = "../../crates/glyf-core" }
+glyf-pack = { path = "../../crates/glyf-pack" }
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "105158e08c89d47f57af4621420ed68eb3a147ce" }
+designing-makepad = { git = "https://github.com/paulgreenbox-beep/designing-makepad.git", tag = "v0.1.0" }
+toolkit-windows-automation = { path = "../../../Rust_Makepad_Toolkit/crates/toolkit-windows-automation" }
+
+[target.'cfg(windows)'.dependencies]
+windows-uia = { package = "windows", version = "0.61.3", features = [
+    "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging",
+] }
+
+[[bin]]
+name = "glyf-editor"
+path = "../../apps/glyf-editor/src/main.rs"

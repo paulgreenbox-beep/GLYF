@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/glyf-core",
+    "crates/glyf-pack",
+    "crates/glyf-cli",
+    "apps/glyf-editor",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+glyf-core = { path = "crates/glyf-core" }
+glyf-pack = { path = "crates/glyf-pack" }
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "105158e08c89d47f57af4621420ed68eb3a147ce", version = "2.0.0" }
+

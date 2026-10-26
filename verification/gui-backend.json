@@ -1,0 +1,35 @@
+{
+  "schema": "glyf-gui-development-v2",
+  "backend": "toolkit-gui-remote-canary",
+  "route": "windows-uia",
+  "legacy_fallback": false,
+  "owned_discovery_can_launch": true,
+  "required_observation_tools": [
+    "windows_find_window",
+    "windows_get_control_tree",
+    "windows_get_element_state",
+    "windows_get_automation_id_state",
+    "windows_capture_window",
+    "windows_get_evidence"
+  ],
+  "required_input_tools": [
+    "windows_focus_automation_id",
+    "windows_send_keys_to_automation_id",
+    "windows_set_value_to_automation_id",
+    "windows_click_automation_id"
+  ],
+  "runtime_remote_source": "../Rust_Makepad_Toolkit/.deps/makepad/platform/src/remote.rs",
+  "required_remote_makepad_commit": "71c9ddcbb9c01dd208f99621fdd71024a5d35c65",
+  "operator_admission": null,
+  "interaction_contract": "Explicit Windows UIA inside the selected canary: real ValuePattern and InvokePattern, with the existing owned foreground/arbiter keyboard path. No direct UIA script, legacy MCP or private HTTP fallback.",
+  "integration_owner": "Makepad_Toolkit",
+  "operator_contract": "Existing Toolkit OwnedDriver and scoped Codex MCP client; exact own PID/birth/path/SHA allowlist; fresh admission; no global configuration change",
+  "historical_evidence": "reports/evidence (immutable; not proof of current canary acceptance)",
+  "cheapest_verification_path": [
+    "node scripts/check-editor-modules.mjs",
+    "node --test scripts/check-gui-backend.test.mjs",
+    "cargo check --offline --locked -p glyf-editor",
+    "cargo test --offline --locked -p glyf-editor",
+    "canary-owned inspection and interaction only after operator admission; otherwise BLOCKED_ENVIRONMENT"
+  ]
+}

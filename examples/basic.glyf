@@ -1,0 +1,32 @@
+glyf {
+    version: 1;
+    image {
+        name: "sample_image";
+        source: "sample.png";
+        comment: "Synthetic checkerboard resource for the public format example.";
+    }
+    annotation {
+        name: "focus_point";
+        role: "point_of_interest";
+        rel: 0.25 0.25;
+        comment: "A point described for a person or an AI reader.";
+    }
+    annotation {
+        name: "sample_region";
+        role: "region_of_interest";
+        rel1: 0.1 0.1;
+        rel2: 0.4 0.4;
+        comment: "A semantic region on the composition canvas.";
+    }
+    group {
+        name: "main";
+        part {
+            name: "source_clip";
+            source: "sample_image";
+            clip: 2.0 2.0 6.0 6.0;
+            rel1: 0.5 0.5;
+            rel2: 0.9 0.9;
+            comment: "A clipped part reusing the source image.";
+        }
+    }
+}

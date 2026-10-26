@@ -1,0 +1,10 @@
+[package]
+name = "glyf-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GLYF v0.1 manifest model, parser, serializer, and validation"
+
+[lib]
+path = "src/lib.rs"
+
