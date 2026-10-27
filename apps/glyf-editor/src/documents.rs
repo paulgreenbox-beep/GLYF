@@ -26,7 +26,10 @@ impl App {
         }
     }
 
-    pub(crate) fn apply_document_snapshot(&mut self, snapshot: DocumentSnapshot) {
+    pub(crate) fn apply_document_snapshot(&mut self, snapshot: DocumentSnapshot) -> bool {
+        let atlas_changed = !DocumentSnapshot::same_atlas_sources(&self.images, &snapshot.images);
+        let preview_changed = atlas_changed || self.selected != snapshot.selected;
+        self.atlases_dirty |= atlas_changed;
         self.images = snapshot.images;
         self.groups = snapshot.groups;
         self.annotations = snapshot.annotations;
@@ -49,6 +52,7 @@ impl App {
         self.pending_clip = None;
         self.pending_part_popup = None;
         self.annotation_draft.clear();
+        preview_changed
     }
 
     pub(crate) fn allocate_tab_id(&mut self) -> u64 {
@@ -180,6 +184,7 @@ impl App {
                 path: self.project_path.clone(),
                 dirty: self.dirty,
                 snapshot: self.capture_document_snapshot(),
+                saved_snapshot: (!self.dirty).then(|| self.capture_document_snapshot()),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
             });
@@ -191,14 +196,19 @@ impl App {
         if index >= self.tabs.len() || index == self.active_tab {
             return;
         }
+        if self.has_pending_work() || self.canvas_interaction_active(cx) {
+            self.set_status(cx, "Finish or cancel the current edit before switching documents");
+            return;
+        }
         self.sync_active_tab_snapshot();
         self.active_tab = index;
         let snapshot = self.tabs[index].snapshot.clone();
         let undo_stack = self.tabs[index].undo_stack.clone();
         let redo_stack = self.tabs[index].redo_stack.clone();
-        self.apply_document_snapshot(snapshot);
+        let preview_changed = self.apply_document_snapshot(snapshot);
         self.undo_stack = undo_stack;
         self.redo_stack = redo_stack;
+        if preview_changed { self.load_preview(cx); }
         self.refresh(cx);
         self.set_status(cx, format!("Active document: {}", self.tabs[index].title));
     }
@@ -218,6 +228,13 @@ impl App {
             self.activate_tab(cx, index);
         }
     }
+    pub(crate) fn checkpoint_saved_document(&mut self) {
+        let snapshot = self.capture_document_snapshot();
+        if let Some(tab) = self.active_tab_mut() {
+            tab.saved_snapshot = Some(snapshot);
+        }
+    }
+
     pub(crate) fn set_dirty(&mut self, cx: &mut Cx, dirty: bool) {
         self.dirty = dirty;
         self.close_confirm_armed = false;
@@ -277,6 +294,7 @@ impl App {
             title: title.clone(),
             path: String::new(),
             dirty: false,
+            saved_snapshot: Some(snapshot.clone()),
             snapshot,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -342,6 +360,7 @@ impl App {
                 title: "Untitled 1".into(),
                 path: String::new(),
                 dirty: false,
+                saved_snapshot: Some(snapshot.clone()),
                 snapshot,
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
@@ -355,9 +374,10 @@ impl App {
         let snapshot = self.tabs[self.active_tab].snapshot.clone();
         let undo_stack = self.tabs[self.active_tab].undo_stack.clone();
         let redo_stack = self.tabs[self.active_tab].redo_stack.clone();
-        self.apply_document_snapshot(snapshot);
+        let preview_changed = self.apply_document_snapshot(snapshot);
         self.undo_stack = undo_stack;
         self.redo_stack = redo_stack;
+        if preview_changed { self.load_preview(cx); }
         self.pending_tab_close = None;
         self.close_confirm_armed = false;
         self.refresh(cx);
@@ -392,8 +412,11 @@ impl App {
         };
         if index != self.active_tab {
             self.activate_tab(cx, index);
+            if index != self.active_tab {
+                return;
+            }
         }
-        self.save_project(cx);
+        self.save_project_command(cx);
         let Some(index) = self.tabs.iter().position(|tab| tab.id == tab_id) else {
             return;
         };

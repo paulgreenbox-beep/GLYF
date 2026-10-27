@@ -23,6 +23,7 @@ toolkit-windows-automation = { path = "../../../Rust_Makepad_Toolkit/crates/tool
 [target.'cfg(windows)'.dependencies]
 windows-uia = { package = "windows", version = "0.61.3", features = [
     "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi",
+    "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common",
     "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging",
 ] }
 

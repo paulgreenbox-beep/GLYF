@@ -3,9 +3,32 @@
 use super::*;
 
 impl App {
+    fn choose_file(&mut self, cx: &mut Cx, kind: FileDialogKind) -> Option<PathBuf> {
+        match file_dialog::choose_for_language(kind, self.settings.language) {
+            Ok(Some(path)) => Some(path),
+            Ok(None) => {
+                let status = match kind {
+                    FileDialogKind::OpenProject => "Open cancelled",
+                    FileDialogKind::SaveProject => "Save As cancelled",
+                    FileDialogKind::OpenImage => "Add image cancelled",
+                };
+                self.set_status(cx, status);
+                None
+            }
+            Err(error) => {
+                let prefix = if self.settings.language == Language::Russian {
+                    "Не удалось открыть системный файловый диалог"
+                } else {
+                    "Could not open the system file dialog"
+                };
+                self.set_status(cx, format!("{prefix}: {error}"));
+                None
+            }
+        }
+    }
+
     pub(crate) fn open_project_action(&mut self, cx: &mut Cx) {
-        let Some(path) = file_dialog::choose_for_language(FileDialogKind::OpenProject, self.settings.language) else {
-            self.set_status(cx, "Open cancelled");
+        let Some(path) = self.choose_file(cx, FileDialogKind::OpenProject) else {
             return;
         };
         self.project_path = path.display().to_string();
@@ -13,12 +36,10 @@ impl App {
     }
 
     pub(crate) fn save_project_as(&mut self, cx: &mut Cx) {
-        let Some(path) = file_dialog::choose_for_language(FileDialogKind::SaveProject, self.settings.language) else {
-            self.set_status(cx, "Save As cancelled");
+        let Some(path) = self.choose_file(cx, FileDialogKind::SaveProject) else {
             return;
         };
-        self.project_path = path.display().to_string();
-        self.save_project(cx);
+        self.save_project_to(cx, &path.display().to_string());
     }
 
     pub(crate) fn save_project_command(&mut self, cx: &mut Cx) {
@@ -32,12 +53,11 @@ impl App {
     pub(crate) fn add_image_action(&mut self, cx: &mut Cx) {
         let typed = self.ui.text_input(cx, ids!(image_path_input)).text();
         if typed.trim().is_empty() {
-            if let Some(path) = file_dialog::choose_for_language(FileDialogKind::OpenImage, self.settings.language) {
+            if let Some(path) = self.choose_file(cx, FileDialogKind::OpenImage) {
                 self.ui
                     .text_input(cx, ids!(image_path_input))
                     .set_text(cx, &path.display().to_string());
             } else {
-                self.set_status(cx, "Add image cancelled");
                 return;
             }
         }
@@ -190,11 +210,16 @@ impl App {
     }
 
     pub(crate) fn save_project(&mut self, cx: &mut Cx) {
+        let path = self.project_path.clone();
+        self.save_project_to(cx, &path);
+    }
+
+    fn save_project_to(&mut self, cx: &mut Cx, path: &str) {
         if self.has_pending_work() || self.canvas_interaction_active(cx) {
             self.set_status(cx, "Finish or cancel the current edit before saving");
             return;
         }
-        let glyf_path = with_extension(&self.project_path, "glyf");
+        let glyf_path = with_extension(path, "glyf");
         let glyp_path = glyf_path.with_extension("glyp");
         let document = GlyfDocument {
             version: 1,
@@ -210,6 +235,12 @@ impl App {
             groups: self.groups.clone(),
             annotations: self.annotations.clone(),
         };
+        // The manifest and pack are written separately. A failed write may have
+        // changed either file, so the old checkpoint is no longer trustworthy.
+        if let Some(tab) = self.active_tab_mut() {
+            tab.saved_snapshot = None;
+        }
+        self.set_dirty(cx, true);
         if let Err(error) = serialize_file(&document, &glyf_path) {
             self.set_status(cx, format!("Save failed: {error}"));
             return;
@@ -242,6 +273,7 @@ impl App {
             return;
         }
         self.project_path = glyf_path.display().to_string();
+        self.checkpoint_saved_document();
         self.set_dirty(cx, false);
         self.settings.add_recent(&glyf_path);
         let _ = self.settings.save();
@@ -254,6 +286,11 @@ impl App {
 
     pub(crate) fn open_project(&mut self, cx: &mut Cx) {
         let raw_path = self.project_path.trim().to_owned();
+        // The caller supplies an open target through project_path; it is not
+        // the existing tab's path unless the open succeeds.
+        if let Some(tab) = self.tabs.get(self.active_tab) {
+            self.project_path = tab.snapshot.project_path.clone();
+        }
         if raw_path.is_empty() {
             self.set_status(cx, "Enter a .glyf path first");
             return;
@@ -314,10 +351,15 @@ impl App {
                 path: glyf_path.display().to_string(),
                 dirty: false,
                 snapshot: DocumentSnapshot::default(),
+                saved_snapshot: None,
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
             });
             self.active_tab = self.tabs.len() - 1;
+        } else {
+            self.undo_stack.clear();
+            self.redo_stack.clear();
+            self.gesture_history_before = None;
         }
         self.images = loaded;
         self.groups = groups;
@@ -345,6 +387,7 @@ impl App {
         self.project_path = glyf_path.display().to_string();
         self.atlases_dirty = true;
         self.load_preview(cx);
+        self.checkpoint_saved_document();
         self.set_dirty(cx, false);
         self.settings.add_recent(&glyf_path);
         let _ = self.settings.save();

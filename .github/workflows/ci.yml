@@ -19,5 +19,18 @@ jobs:
         run: cargo check --workspace --all-targets --locked
       - name: Test
         run: cargo test --workspace --locked
+      - name: Validate bundled format sample
+        run: cargo run --locked -p glyf-cli -- validate examples/basic.glyf
       - name: Build
         run: cargo build --workspace --locked
+      - name: Verify GLYP resource SHA-256
+        shell: pwsh
+        run: |
+          $extracted = Join-Path $env:RUNNER_TEMP 'glyf-sample-extracted.png'
+          .\target\debug\glyf.exe list examples/basic.glyp
+          if ($LASTEXITCODE -ne 0) { throw 'GLYP list failed' }
+          .\target\debug\glyf.exe extract examples/basic.glyp sample.png $extracted
+          if ($LASTEXITCODE -ne 0) { throw 'GLYP extract failed' }
+          if ((Get-FileHash examples/sample.png -Algorithm SHA256).Hash -ne (Get-FileHash $extracted -Algorithm SHA256).Hash) {
+            throw 'Extracted image SHA-256 differs from source'
+          }

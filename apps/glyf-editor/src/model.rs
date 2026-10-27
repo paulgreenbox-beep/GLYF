@@ -63,6 +63,25 @@ impl Default for DocumentSnapshot {
     }
 }
 
+impl DocumentSnapshot {
+    pub(crate) fn same_atlas_sources(left: &[EditorImage], right: &[EditorImage]) -> bool {
+        left.len() == right.len() && left.iter().zip(right).all(|(a, b)| {
+            a.name == b.name && Arc::ptr_eq(&a.bytes, &b.bytes)
+        })
+    }
+
+    // Compare persisted content, excluding view state, cached dimensions and path.
+    pub(crate) fn same_saved_content(&self, other: &Self) -> bool {
+        self.images.len() == other.images.len()
+            && self.images.iter().zip(&other.images).all(|(a, b)| {
+                a.name == b.name && a.source == b.source && a.comment == b.comment
+                    && (Arc::ptr_eq(&a.bytes, &b.bytes) || a.bytes == b.bytes)
+            })
+            && self.groups == other.groups
+            && self.annotations == other.annotations
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct DocumentTab {
     pub(crate) id: u64,
@@ -70,6 +89,7 @@ pub(crate) struct DocumentTab {
     pub(crate) path: String,
     pub(crate) dirty: bool,
     pub(crate) snapshot: DocumentSnapshot,
+    pub(crate) saved_snapshot: Option<DocumentSnapshot>,
     pub(crate) undo_stack: Vec<HistoryEntry>,
     pub(crate) redo_stack: Vec<HistoryEntry>,
 }
@@ -162,6 +182,19 @@ mod snapshot_performance_tests {
     }
 
     #[test]
+    fn atlas_identity_changes_only_when_image_identity_or_payload_changes() {
+        let before = image_snapshot();
+        let mut after = before.clone();
+        after.images[0].comment = "edited metadata".into();
+        assert!(DocumentSnapshot::same_atlas_sources(&before.images, &after.images));
+        after.images[0].name = "renamed".into();
+        assert!(!DocumentSnapshot::same_atlas_sources(&before.images, &after.images));
+        after.images[0].name = before.images[0].name.clone();
+        after.images[0].bytes = vec![7, 8].into();
+        assert!(!DocumentSnapshot::same_atlas_sources(&before.images, &after.images));
+    }
+
+    #[test]
     fn cloned_tab_and_history_share_the_original_image_allocation() {
         let original = image_snapshot();
         let tab = DocumentTab {
@@ -170,6 +203,7 @@ mod snapshot_performance_tests {
             path: "test.glyf".into(),
             dirty: false,
             snapshot: original.clone(),
+            saved_snapshot: Some(original.clone()),
             undo_stack: vec![HistoryEntry {
                 label: "edit".into(),
                 before: original.clone(),

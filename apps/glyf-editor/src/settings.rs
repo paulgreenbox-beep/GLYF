@@ -571,11 +571,7 @@ impl App {
 
     pub(crate) fn commit_desktop_settings(&mut self, cx: &mut Cx, appearance_changed: bool) {
         self.settings.style_profile = self.style_profile;
-        self.settings.theme = if self.style_profile.palette == PaletteStyle::Light {
-            ThemeChoice::Light
-        } else {
-            ThemeChoice::Dark
-        };
+        self.settings.theme = ThemeChoice::from_style_profile(self.style_profile);
         if let Err(error) = self.settings.save() {
             self.set_status(cx, format!("Settings save failed: {error}"));
         }

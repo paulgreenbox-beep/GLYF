@@ -31,3 +31,37 @@ do not establish pointer, focus, popup, DPI or graphics-driver acceptance.
 Linux and macOS builds were not tested. No executable/font bundle or captured
 user screenshots are published. Fresh-clone and GitHub Actions results are
 recorded separately against the public commit after the initial push.
+
+## Stabilization branch, 2026-10-27
+
+Base commit `9fe510722e1706a0c2236bbdd06698f3601eb213`; candidate commit
+`ea7ed555a2accc7302646b2e94227e9af6719203` was checked on Windows x86_64
+with Rust/Cargo 1.97.1. The separate local commit
+`2fdf5085e659d21b55d82e750c56eac3d9639a30` has the same source tree.
+
+| Check | Result |
+| --- | --- |
+| `node scripts/check-editor-modules.mjs` | Passed |
+| `node --test scripts/check-gui-backend.test.mjs` | Passed: 13 |
+| `cargo check --offline --locked -p glyf-editor -j 1` | Passed |
+| `cargo test --workspace --offline --locked -j 1` | Passed: 62 tests |
+| `cargo build --workspace --offline --locked -j 1` | Passed |
+| CLI sample validate/list/extract and SHA-256 | Passed; CLI source unchanged from base |
+| Fresh public base clone check/test/build | Passed, using the local Cargo cache |
+| [Candidate Windows CI](https://github.com/paulgreenbox-beep/GLYF/actions/runs/40557293556) | Passed: check, test, build, sample validation and GLYP SHA-256 |
+| Windows native dialog, physical GUI and fresh restart | **NOT RUN** |
+
+The file-dialog result and filters have unit coverage; compilation does not
+demonstrate modal ownership, focus, Unicode handling, permissions, cancellation
+or DPI behavior in a real window. The selected canary connection answered an
+evidence request but its current exposed catalog lacks `windows_find_window`
+and no operator admission was configured; GUI acceptance is
+**BLOCKED_ENVIRONMENT**. No synthetic screenshot or direct-model action is
+substituted for physical input. See `reports/FIX_REPORT.md` for the remaining
+risks and local ignored `reports/evidence/stabilization/` for receipts.
+
+The subsequent saved-checkpoint/history fix on this branch passed another
+`cargo check -p glyf-editor`, `cargo test --workspace` (67 tests) and
+`cargo build --workspace` on the same Windows toolchain. Its unit tests cover
+multiple edits, save checkpoints, Save As paths and independent tab histories.
+They do not replace physical tab, dialog, save-failure or Undo/Redo acceptance.
