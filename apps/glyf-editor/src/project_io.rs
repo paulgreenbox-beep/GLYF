@@ -3,9 +3,32 @@
 use super::*;
 
 impl App {
+    fn choose_file(&mut self, cx: &mut Cx, kind: FileDialogKind) -> Option<PathBuf> {
+        match file_dialog::choose_for_language(kind, self.settings.language) {
+            Ok(Some(path)) => Some(path),
+            Ok(None) => {
+                let status = match kind {
+                    FileDialogKind::OpenProject => "Open cancelled",
+                    FileDialogKind::SaveProject => "Save As cancelled",
+                    FileDialogKind::OpenImage => "Add image cancelled",
+                };
+                self.set_status(cx, status);
+                None
+            }
+            Err(error) => {
+                let prefix = if self.settings.language == Language::Russian {
+                    "Не удалось открыть системный файловый диалог"
+                } else {
+                    "Could not open the system file dialog"
+                };
+                self.set_status(cx, format!("{prefix}: {error}"));
+                None
+            }
+        }
+    }
+
     pub(crate) fn open_project_action(&mut self, cx: &mut Cx) {
-        let Some(path) = file_dialog::choose_for_language(FileDialogKind::OpenProject, self.settings.language) else {
-            self.set_status(cx, "Open cancelled");
+        let Some(path) = self.choose_file(cx, FileDialogKind::OpenProject) else {
             return;
         };
         self.project_path = path.display().to_string();
@@ -13,8 +36,7 @@ impl App {
     }
 
     pub(crate) fn save_project_as(&mut self, cx: &mut Cx) {
-        let Some(path) = file_dialog::choose_for_language(FileDialogKind::SaveProject, self.settings.language) else {
-            self.set_status(cx, "Save As cancelled");
+        let Some(path) = self.choose_file(cx, FileDialogKind::SaveProject) else {
             return;
         };
         self.project_path = path.display().to_string();
@@ -32,12 +54,11 @@ impl App {
     pub(crate) fn add_image_action(&mut self, cx: &mut Cx) {
         let typed = self.ui.text_input(cx, ids!(image_path_input)).text();
         if typed.trim().is_empty() {
-            if let Some(path) = file_dialog::choose_for_language(FileDialogKind::OpenImage, self.settings.language) {
+            if let Some(path) = self.choose_file(cx, FileDialogKind::OpenImage) {
                 self.ui
                     .text_input(cx, ids!(image_path_input))
                     .set_text(cx, &path.display().to_string());
             } else {
-                self.set_status(cx, "Add image cancelled");
                 return;
             }
         }
