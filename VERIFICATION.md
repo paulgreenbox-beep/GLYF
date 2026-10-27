@@ -31,3 +31,30 @@ do not establish pointer, focus, popup, DPI or graphics-driver acceptance.
 Linux and macOS builds were not tested. No executable/font bundle or captured
 user screenshots are published. Fresh-clone and GitHub Actions results are
 recorded separately against the public commit after the initial push.
+
+## Stabilization branch, 2026-10-27
+
+Base commit `9fe510722e1706a0c2236bbdd06698f3601eb213`; subsequent
+changes in `fix/desktop-stabilization` were checked on Windows x86_64 with
+Rust/Cargo 1.97.1. This is a working-tree result, not a claim about the
+published base commit or an uncreated release commit.
+
+| Check | Result |
+| --- | --- |
+| `node scripts/check-editor-modules.mjs` | Passed |
+| `node --test scripts/check-gui-backend.test.mjs` | Passed: 13 |
+| `cargo check --offline --locked -p glyf-editor -j 1` | Passed |
+| `cargo test --workspace --offline --locked -j 1` | Passed: 62 tests |
+| `cargo build --workspace --offline --locked -j 1` | Passed |
+| CLI sample validate/list/extract and SHA-256 | Passed; CLI source unchanged from base |
+| Fresh public base clone check/test/build | Passed, using the local Cargo cache |
+| Windows native dialog, physical GUI and fresh restart | **NOT RUN** |
+
+The file-dialog result and filters have unit coverage; compilation does not
+demonstrate modal ownership, focus, Unicode handling, permissions, cancellation
+or DPI behavior in a real window. The selected canary connection answered an
+evidence request but its current exposed catalog lacks `windows_find_window`
+and no operator admission was configured; GUI acceptance is
+**BLOCKED_ENVIRONMENT**. No synthetic screenshot or direct-model action is
+substituted for physical input. See `reports/FIX_REPORT.md` for the remaining
+risks and local ignored `reports/evidence/stabilization/` for receipts.

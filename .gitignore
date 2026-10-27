@@ -36,3 +36,8 @@ Thumbs.db
 /scripts/glyf-canary-*
 /scripts/check-glyf-canary-document.mjs
 /.cargo/config.toml
+
+# The concise stabilization report is publishable; bulky evidence stays local.
+!/reports/
+/reports/*
+!/reports/FIX_REPORT.md
