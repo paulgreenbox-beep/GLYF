@@ -214,6 +214,25 @@ impl ThemeChoice {
             _ => Self::System,
         }
     }
+
+    /// Compatibility projection for startup paths that still need the legacy
+    /// two-state Makepad theme. `StyleProfile` remains the persisted source of
+    /// truth, including Neon and custom palettes.
+    pub fn from_style_profile(profile: StyleProfile) -> Self {
+        if profile.palette == PaletteStyle::Light {
+            Self::Light
+        } else {
+            Self::Dark
+        }
+    }
+
+    fn into_legacy_style_profile(self) -> StyleProfile {
+        let mut profile = StyleProfile::production();
+        if self == Self::Light {
+            profile.palette = PaletteStyle::Light;
+        }
+        profile
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -401,11 +420,12 @@ fn serialize_settings(settings: &DesktopSettings) -> String {
         })
         .collect::<Vec<_>>()
         .join("|");
+    let compatibility_theme = ThemeChoice::from_style_profile(settings.style_profile);
     format!(
         "version={}\nlanguage={}\ntheme={}\ndefault_zoom={:.6}\nrestore_session={}\nrecent_file_count={}\nrecent_files={}\nstyle_preset={}\nstyle_palette={}\nstyle_shape={}\nstyle_surface={}\nstyle_motion={}\ninterface_font_size={}\nui_scale={}\ndensity={}\nshow_resources={}\nshow_layers={}\nshow_inspector={}\nshow_status={}\nconfirm_destructive={}\n",
         SETTINGS_VERSION,
         settings.language.code(),
-        settings.theme.code(),
+        compatibility_theme.code(),
         settings.default_zoom,
         settings.restore_session,
         settings.recent_file_count,
@@ -434,8 +454,13 @@ fn parse_settings(contents: &str) -> Result<DesktopSettings, String> {
     let mut settings = DesktopSettings::default();
     let mut recognized = false;
     let mut corrupt = false;
-    let mut profile = settings.style_profile;
-    let mut has_profile_axes = false;
+    let mut legacy_theme = None;
+    let mut has_style_profile = false;
+    let mut style_preset = None;
+    let mut style_palette = None;
+    let mut style_shape = None;
+    let mut style_surface = None;
+    let mut style_motion = None;
     for line in contents.lines() {
         let line = line.trim();
         let Some((key, value)) = line.split_once('=') else {
@@ -467,7 +492,7 @@ fn parse_settings(contents: &str) -> Result<DesktopSettings, String> {
         }
         match key {
             "language" => settings.language = Language::from_code(value),
-            "theme" => settings.theme = ThemeChoice::from_code(value),
+            "theme" => legacy_theme = Some(ThemeChoice::from_code(value)),
             "default_zoom" => match value.parse::<f64>() {
                 Ok(zoom) if zoom.is_finite() => settings.default_zoom = zoom.clamp(0.25, 4.0),
                 _ => corrupt = true,
@@ -483,26 +508,29 @@ fn parse_settings(contents: &str) -> Result<DesktopSettings, String> {
             "recent_files" => {
                 settings.recent_files = decode_recent_files(value);
             }
-            "style_preset" => match parse_style_preset(value) {
-                Some(preset) => settings.style_profile = StyleProfile::from_preset(preset),
-                None if value.eq_ignore_ascii_case("custom") => {}
-                None => corrupt = true,
-            },
+            "style_preset" => {
+                has_style_profile = true;
+                match parse_style_preset(value) {
+                    Some(preset) => style_preset = Some(preset),
+                    None if value.eq_ignore_ascii_case("custom") => style_preset = None,
+                    None => corrupt = true,
+                }
+            }
             "style_palette" => {
-                profile.palette = PaletteStyle::from_code(value);
-                has_profile_axes = true;
+                style_palette = Some(PaletteStyle::from_code(value));
+                has_style_profile = true;
             }
             "style_shape" => {
-                profile.shape = ShapeStyle::from_code(value);
-                has_profile_axes = true;
+                style_shape = Some(ShapeStyle::from_code(value));
+                has_style_profile = true;
             }
             "style_surface" => {
-                profile.surface = SurfaceStyle::from_code(value);
-                has_profile_axes = true;
+                style_surface = Some(SurfaceStyle::from_code(value));
+                has_style_profile = true;
             }
             "style_motion" => {
-                profile.motion = MotionStyle::from_code(value);
-                has_profile_axes = true;
+                style_motion = Some(MotionStyle::from_code(value));
+                has_style_profile = true;
             }
             "interface_font_size" | "font_size" => match FontSizeChoice::from_code(value) {
                 Some(v) => settings.font_size = v,
@@ -545,9 +573,30 @@ fn parse_settings(contents: &str) -> Result<DesktopSettings, String> {
     if corrupt {
         return Err("settings contain malformed values".into());
     }
-    if has_profile_axes {
+    if has_style_profile {
+        let mut profile = style_preset
+            .map(StyleProfile::from_preset)
+            .or_else(|| legacy_theme.map(ThemeChoice::into_legacy_style_profile))
+            .unwrap_or_else(StyleProfile::production);
+        if let Some(palette) = style_palette {
+            profile.palette = palette;
+        }
+        if let Some(shape) = style_shape {
+            profile.shape = shape;
+        }
+        if let Some(surface) = style_surface {
+            profile.surface = surface;
+        }
+        if let Some(motion) = style_motion {
+            profile.motion = motion;
+        }
         settings.style_profile = profile;
+    } else if let Some(theme) = legacy_theme {
+        // Older settings files had only `theme`; migrate it once into the
+        // richer profile. System followed the production dark theme at startup.
+        settings.style_profile = theme.into_legacy_style_profile();
     }
+    settings.theme = ThemeChoice::from_style_profile(settings.style_profile);
     settings.recent_files.truncate(settings.recent_file_count);
     Ok(settings)
 }
@@ -1156,6 +1205,106 @@ mod tests {
         assert!(encoded.contains("style_palette=neon\n"));
         assert!(!encoded.contains(".glyf"));
         assert_eq!(parse_settings(&encoded).expect("settings parse"), settings);
+    }
+
+    #[test]
+    fn dark_light_neon_and_custom_style_profiles_persist() {
+        let mut light = StyleProfile::production();
+        light.palette = PaletteStyle::Light;
+        let mut custom = StyleProfile::neon();
+        custom.shape = ShapeStyle::Angular;
+        custom.surface = SurfaceStyle::Neumorphic;
+        custom.motion = MotionStyle::None;
+        assert!(custom.preset().is_none(), "test profile must be custom");
+
+        for (name, profile) in [
+            ("dark", StyleProfile::production()),
+            ("light", light),
+            ("neon", StyleProfile::neon()),
+            ("custom", custom),
+        ] {
+            let settings = DesktopSettings {
+                theme: ThemeChoice::from_style_profile(profile),
+                style_profile: profile,
+                ..Default::default()
+            };
+            let encoded = serialize_settings(&settings);
+            let restored = parse_settings(&encoded).expect("settings parse");
+            assert_eq!(restored.style_profile, profile, "{name} profile changed");
+            assert_eq!(
+                restored.theme,
+                ThemeChoice::from_style_profile(profile),
+                "{name} compatibility theme changed"
+            );
+            if name == "custom" {
+                assert!(encoded.contains("style_preset=custom\n"));
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_theme_migrates_to_a_profile_without_resetting_other_settings() {
+        let mut light = StyleProfile::production();
+        light.palette = PaletteStyle::Light;
+
+        for (legacy_theme, expected_profile) in [
+            ("dark", StyleProfile::production()),
+            ("light", light),
+            ("system", StyleProfile::production()),
+        ] {
+            let contents = format!(
+                "language=ru\ntheme={legacy_theme}\nrestore_session=true\nrecent_file_count=4\n"
+            );
+            let restored = parse_settings(&contents).expect("legacy settings parse");
+            assert_eq!(restored.style_profile, expected_profile, "{legacy_theme}");
+            assert_eq!(
+                restored.theme,
+                ThemeChoice::from_style_profile(expected_profile),
+                "{legacy_theme} compatibility theme"
+            );
+            assert_eq!(restored.language, Language::Russian);
+            assert!(restored.restore_session);
+            assert_eq!(restored.recent_file_count, 4);
+        }
+    }
+
+    #[test]
+    fn explicit_neon_or_custom_profile_wins_over_conflicting_legacy_theme() {
+        let neon = parse_settings(
+            "theme=light\nstyle_preset=neon\nstyle_palette=neon\n",
+        )
+        .expect("Neon settings parse");
+        assert_eq!(neon.style_profile, StyleProfile::neon());
+        assert_eq!(neon.theme, ThemeChoice::Dark);
+
+        let mut custom = StyleProfile::neon();
+        custom.palette = PaletteStyle::Light;
+        custom.shape = ShapeStyle::Angular;
+        custom.surface = SurfaceStyle::Neumorphic;
+        custom.motion = MotionStyle::None;
+        let settings = DesktopSettings {
+            // A stale compatibility field must not override the profile.
+            theme: ThemeChoice::Dark,
+            style_profile: custom,
+            ..Default::default()
+        };
+        let encoded = serialize_settings(&settings);
+        assert!(encoded.contains("theme=light\n"));
+        assert!(encoded.contains("style_preset=custom\n"));
+        let restored = parse_settings(&encoded).expect("custom settings parse");
+        assert_eq!(restored.style_profile, custom);
+        assert_eq!(restored.theme, ThemeChoice::Light);
+    }
+
+    #[test]
+    fn partial_custom_profile_keeps_legacy_palette_as_its_base() {
+        let restored = parse_settings(
+            "theme=light\nstyle_preset=custom\nstyle_shape=angular\n",
+        )
+        .expect("partial settings parse");
+        assert_eq!(restored.style_profile.palette, PaletteStyle::Light);
+        assert_eq!(restored.style_profile.shape, ShapeStyle::Angular);
+        assert_eq!(restored.theme, ThemeChoice::Light);
     }
 
     #[test]
