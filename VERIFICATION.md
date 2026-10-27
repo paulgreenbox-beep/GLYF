@@ -34,10 +34,10 @@ recorded separately against the public commit after the initial push.
 
 ## Stabilization branch, 2026-10-27
 
-Base commit `9fe510722e1706a0c2236bbdd06698f3601eb213`; subsequent
-changes in `fix/desktop-stabilization` were checked on Windows x86_64 with
-Rust/Cargo 1.97.1. This is a working-tree result, not a claim about the
-published base commit or an uncreated release commit.
+Base commit `9fe510722e1706a0c2236bbdd06698f3601eb213`; candidate commit
+`ea7ed555a2accc7302646b2e94227e9af6719203` was checked on Windows x86_64
+with Rust/Cargo 1.97.1. The separate local commit
+`2fdf5085e659d21b55d82e750c56eac3d9639a30` has the same source tree.
 
 | Check | Result |
 | --- | --- |
@@ -48,6 +48,7 @@ published base commit or an uncreated release commit.
 | `cargo build --workspace --offline --locked -j 1` | Passed |
 | CLI sample validate/list/extract and SHA-256 | Passed; CLI source unchanged from base |
 | Fresh public base clone check/test/build | Passed, using the local Cargo cache |
+| [Candidate Windows CI](https://github.com/paulgreenbox-beep/GLYF/actions/runs/40557293556) | Passed: check, test, build, sample validation and GLYP SHA-256 |
 | Windows native dialog, physical GUI and fresh restart | **NOT RUN** |
 
 The file-dialog result and filters have unit coverage; compilation does not
