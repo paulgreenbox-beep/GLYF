@@ -2,6 +2,27 @@
 
 use super::*;
 
+// Retain the current path and check content against the tab's saved checkpoint.
+fn move_history(
+    current: DocumentSnapshot,
+    from: &mut Vec<HistoryEntry>,
+    to: &mut Vec<HistoryEntry>,
+    saved: Option<&DocumentSnapshot>,
+    undo: bool,
+) -> Option<(DocumentSnapshot, String)> {
+    let entry = from.pop()?;
+    let mut target = if undo { entry.before.clone() } else { entry.after.clone() };
+    target.project_path = current.project_path.clone();
+    target.dirty = saved.map_or(true, |checkpoint| !target.same_saved_content(checkpoint));
+    let label = entry.label.clone();
+    to.push(if undo {
+        HistoryEntry { label: entry.label, before: entry.before, after: current }
+    } else {
+        HistoryEntry { label: entry.label, before: current, after: entry.after }
+    });
+    Some((target, label))
+}
+
 impl App {
     pub(crate) fn begin_gesture_history(&mut self) {
         if self.gesture_history_before.is_none() {
@@ -29,39 +50,35 @@ impl App {
     }
 
     pub(crate) fn undo(&mut self, cx: &mut Cx) {
-        let Some(entry) = self.undo_stack.pop() else {
-            self.set_status(cx, "Nothing to undo");
-            return;
-        };
-        let current = self.capture_document_snapshot();
-        self.apply_document_snapshot(entry.before.clone());
-        self.redo_stack.push(HistoryEntry {
-            label: entry.label.clone(),
-            before: entry.before,
-            after: current,
-        });
-        self.set_dirty(cx, false);
-        self.refresh(cx);
-        self.set_status(cx, format!("Undo {}", entry.label));
-        self.sync_active_tab_snapshot();
+        self.restore_history(cx, true);
     }
 
     pub(crate) fn redo(&mut self, cx: &mut Cx) {
-        let Some(entry) = self.redo_stack.pop() else {
-            self.set_status(cx, "Nothing to redo");
+        self.restore_history(cx, false);
+    }
+
+    fn restore_history(&mut self, cx: &mut Cx, undo: bool) {
+        if self.has_pending_work() || self.canvas_interaction_active(cx) {
+            self.set_status(cx, "Finish or cancel the current edit before undo or redo");
+            return;
+        }
+        let current = self.capture_document_snapshot();
+        let saved = self.tabs.get(self.active_tab).and_then(|tab| tab.saved_snapshot.as_ref());
+        let result = if undo {
+            move_history(current, &mut self.undo_stack, &mut self.redo_stack, saved, true)
+        } else {
+            move_history(current, &mut self.redo_stack, &mut self.undo_stack, saved, false)
+        };
+        let Some((snapshot, label)) = result else {
+            self.set_status(cx, if undo { "Nothing to undo" } else { "Nothing to redo" });
             return;
         };
-        let current = self.capture_document_snapshot();
-        self.apply_document_snapshot(entry.after.clone());
-        self.undo_stack.push(HistoryEntry {
-            label: entry.label.clone(),
-            before: current,
-            after: entry.after,
-        });
-        self.set_dirty(cx, false);
+        let dirty = snapshot.dirty;
+        let preview_changed = self.apply_document_snapshot(snapshot);
+        self.set_dirty(cx, dirty);
+        if preview_changed { self.load_preview(cx); }
         self.refresh(cx);
-        self.set_status(cx, format!("Redo {}", entry.label));
-        self.sync_active_tab_snapshot();
+        self.set_status(cx, format!("{} {}", if undo { "Undo" } else { "Redo" }, label));
     }
 
     pub(crate) fn copy_selection(&mut self, cx: &mut Cx) {
@@ -189,5 +206,152 @@ impl App {
         self.sync_spatial(cx);
 
         self.set_status(cx, "Selection updated");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab(path: &str) -> DocumentTab {
+        let mut snapshot = DocumentSnapshot::default();
+        snapshot.project_path = path.into();
+        DocumentTab {
+            id: 1,
+            title: path.into(),
+            path: path.into(),
+            dirty: false,
+            saved_snapshot: Some(snapshot.clone()),
+            snapshot,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+        }
+    }
+
+    fn edit(tab: &mut DocumentTab, comment: &str) {
+        let before = tab.snapshot.clone();
+        if tab.snapshot.images.is_empty() {
+            tab.snapshot.images.push(EditorImage {
+                name: "image".into(),
+                source: "image.png".into(),
+                comment: comment.into(),
+                bytes: vec![1, 2, 3].into(),
+                pixel_size: None,
+            });
+        } else {
+            tab.snapshot.images[0].comment = comment.into();
+        }
+        tab.snapshot.dirty = true;
+        tab.undo_stack.push(HistoryEntry {
+            label: "Edit".into(),
+            before,
+            after: tab.snapshot.clone(),
+        });
+        tab.redo_stack.clear();
+    }
+
+    fn step(tab: &mut DocumentTab, undo: bool) {
+        let current = tab.snapshot.clone();
+        let (from, to) = if undo {
+            (&mut tab.undo_stack, &mut tab.redo_stack)
+        } else {
+            (&mut tab.redo_stack, &mut tab.undo_stack)
+        };
+        tab.snapshot = move_history(current, from, to, tab.saved_snapshot.as_ref(), undo)
+            .expect("history entry").0;
+    }
+
+    fn save(tab: &mut DocumentTab, path: &str) {
+        tab.snapshot.project_path = path.into();
+        tab.snapshot.dirty = false;
+        tab.saved_snapshot = Some(tab.snapshot.clone());
+    }
+
+    #[test]
+    fn two_unsaved_edits_undo_redo_and_branch() {
+        let mut doc = tab("first.glyf");
+        edit(&mut doc, "one");
+        edit(&mut doc, "two");
+        step(&mut doc, true);
+        assert_eq!(doc.snapshot.images[0].comment, "one");
+        assert!(doc.snapshot.dirty);
+        step(&mut doc, false);
+        assert_eq!(doc.snapshot.images[0].comment, "two");
+        assert!(doc.snapshot.dirty);
+        step(&mut doc, true);
+        step(&mut doc, true);
+        assert!(!doc.snapshot.dirty);
+        step(&mut doc, false);
+        assert!(doc.snapshot.dirty);
+        edit(&mut doc, "branch");
+        assert!(doc.redo_stack.is_empty());
+        step(&mut doc, true);
+        assert!(doc.snapshot.dirty);
+    }
+
+    #[test]
+    fn save_between_edits_and_save_as_preserve_checkpoint_and_path() {
+        let mut doc = tab("old.glyf");
+        edit(&mut doc, "one");
+        save(&mut doc, "old.glyf");
+        edit(&mut doc, "two");
+        step(&mut doc, true);
+        assert!(!doc.snapshot.dirty);
+        step(&mut doc, true);
+        assert!(doc.snapshot.dirty);
+        step(&mut doc, false);
+        assert!(!doc.snapshot.dirty);
+        step(&mut doc, false);
+        assert!(doc.snapshot.dirty);
+        save(&mut doc, "new.glyf");
+        step(&mut doc, true);
+        assert!(doc.snapshot.dirty);
+        assert_eq!(doc.snapshot.project_path, "new.glyf");
+        step(&mut doc, false);
+        assert!(!doc.snapshot.dirty);
+        assert_eq!(doc.snapshot.project_path, "new.glyf");
+        step(&mut doc, true);
+        save(&mut doc, "third.glyf");
+        step(&mut doc, false);
+        assert!(doc.snapshot.dirty);
+        assert_eq!(doc.snapshot.project_path, "third.glyf");
+        step(&mut doc, true);
+        assert!(!doc.snapshot.dirty);
+    }
+
+    #[test]
+    fn checkpoints_and_paths_are_isolated_when_switching_tabs() {
+        let mut tabs = [tab("a.glyf"), tab("b.glyf")];
+        edit(&mut tabs[0], "a1");
+        save(&mut tabs[0], "a-new.glyf");
+        edit(&mut tabs[0], "a2");
+        edit(&mut tabs[1], "b1");
+        step(&mut tabs[0], true);
+        assert!(!tabs[0].snapshot.dirty);
+        assert_eq!(tabs[0].snapshot.project_path, "a-new.glyf");
+        assert!(tabs[1].snapshot.dirty);
+        step(&mut tabs[1], true);
+        assert!(!tabs[1].snapshot.dirty);
+        assert_eq!(tabs[1].snapshot.project_path, "b.glyf");
+        step(&mut tabs[0], false);
+        assert!(tabs[0].snapshot.dirty);
+        assert!(!tabs[1].snapshot.dirty);
+    }
+
+    #[test]
+    fn checkpoint_ignores_view_state_but_includes_resource_bytes() {
+        let mut doc = tab("test.glyf");
+        edit(&mut doc, "one");
+        save(&mut doc, "test.glyf");
+        let checkpoint = doc.saved_snapshot.as_ref().unwrap();
+        let mut other = checkpoint.clone();
+        other.canvas_zoom = 2.0;
+        other.project_path = "elsewhere.glyf".into();
+        other.dirty = true;
+        assert!(other.same_saved_content(checkpoint));
+        other.images[0].bytes = vec![9].into();
+        assert!(!other.same_saved_content(checkpoint));
+        assert!(move_history(other, &mut doc.undo_stack, &mut doc.redo_stack, None, true)
+            .unwrap().0.dirty);
     }
 }

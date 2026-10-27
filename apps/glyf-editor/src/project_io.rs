@@ -39,8 +39,7 @@ impl App {
         let Some(path) = self.choose_file(cx, FileDialogKind::SaveProject) else {
             return;
         };
-        self.project_path = path.display().to_string();
-        self.save_project(cx);
+        self.save_project_to(cx, &path.display().to_string());
     }
 
     pub(crate) fn save_project_command(&mut self, cx: &mut Cx) {
@@ -211,11 +210,16 @@ impl App {
     }
 
     pub(crate) fn save_project(&mut self, cx: &mut Cx) {
+        let path = self.project_path.clone();
+        self.save_project_to(cx, &path);
+    }
+
+    fn save_project_to(&mut self, cx: &mut Cx, path: &str) {
         if self.has_pending_work() || self.canvas_interaction_active(cx) {
             self.set_status(cx, "Finish or cancel the current edit before saving");
             return;
         }
-        let glyf_path = with_extension(&self.project_path, "glyf");
+        let glyf_path = with_extension(path, "glyf");
         let glyp_path = glyf_path.with_extension("glyp");
         let document = GlyfDocument {
             version: 1,
@@ -231,6 +235,12 @@ impl App {
             groups: self.groups.clone(),
             annotations: self.annotations.clone(),
         };
+        // The manifest and pack are written separately. A failed write may have
+        // changed either file, so the old checkpoint is no longer trustworthy.
+        if let Some(tab) = self.active_tab_mut() {
+            tab.saved_snapshot = None;
+        }
+        self.set_dirty(cx, true);
         if let Err(error) = serialize_file(&document, &glyf_path) {
             self.set_status(cx, format!("Save failed: {error}"));
             return;
@@ -263,6 +273,7 @@ impl App {
             return;
         }
         self.project_path = glyf_path.display().to_string();
+        self.checkpoint_saved_document();
         self.set_dirty(cx, false);
         self.settings.add_recent(&glyf_path);
         let _ = self.settings.save();
@@ -275,6 +286,11 @@ impl App {
 
     pub(crate) fn open_project(&mut self, cx: &mut Cx) {
         let raw_path = self.project_path.trim().to_owned();
+        // The caller supplies an open target through project_path; it is not
+        // the existing tab's path unless the open succeeds.
+        if let Some(tab) = self.tabs.get(self.active_tab) {
+            self.project_path = tab.snapshot.project_path.clone();
+        }
         if raw_path.is_empty() {
             self.set_status(cx, "Enter a .glyf path first");
             return;
@@ -335,10 +351,15 @@ impl App {
                 path: glyf_path.display().to_string(),
                 dirty: false,
                 snapshot: DocumentSnapshot::default(),
+                saved_snapshot: None,
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
             });
             self.active_tab = self.tabs.len() - 1;
+        } else {
+            self.undo_stack.clear();
+            self.redo_stack.clear();
+            self.gesture_history_before = None;
         }
         self.images = loaded;
         self.groups = groups;
@@ -366,6 +387,7 @@ impl App {
         self.project_path = glyf_path.display().to_string();
         self.atlases_dirty = true;
         self.load_preview(cx);
+        self.checkpoint_saved_document();
         self.set_dirty(cx, false);
         self.settings.add_recent(&glyf_path);
         let _ = self.settings.save();

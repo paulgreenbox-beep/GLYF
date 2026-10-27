@@ -164,6 +164,9 @@ impl App {
             self.settings.add_recent(&glyf_path);
             let _ = self.settings.save();
             self.activate_tab(cx, index);
+            if self.active_tab != index {
+                return;
+            }
             self.close_menu(cx);
             self.set_status(
                 cx,

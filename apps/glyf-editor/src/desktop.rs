@@ -972,6 +972,12 @@ pub fn localized_status(message: &str, language: Language) -> String {
         "Finish or cancel the current edit before saving" => {
             "Перед сохранением завершите или отмените текущее редактирование"
         }
+        "Finish or cancel the current edit before switching documents" => {
+            "Перед переключением документов завершите или отмените текущее редактирование"
+        }
+        "Finish or cancel the current edit before undo or redo" => {
+            "Перед отменой или повтором завершите текущее редактирование"
+        }
         "Enter a .glyf path first" => "Сначала укажите путь к файлу .glyf",
         "Image selected" => "Изображение выбрано",
         "Part selected" => "Часть выбрана",
@@ -1501,6 +1507,14 @@ mod tests {
 
     #[test]
     fn localized_status_translates_exact_and_dynamic_messages() {
+        assert_eq!(
+            localized_status("Finish or cancel the current edit before undo or redo", Language::Russian),
+            "Перед отменой или повтором завершите текущее редактирование"
+        );
+        assert_eq!(
+            localized_status("Finish or cancel the current edit before switching documents", Language::Russian),
+            "Перед переключением документов завершите или отмените текущее редактирование"
+        );
         assert_eq!(
             localized_status("Canvas selection cleared", Language::Russian),
             "Выбор на холсте снят"
