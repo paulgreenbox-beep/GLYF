@@ -59,3 +59,9 @@ and no operator admission was configured; GUI acceptance is
 **BLOCKED_ENVIRONMENT**. No synthetic screenshot or direct-model action is
 substituted for physical input. See `reports/FIX_REPORT.md` for the remaining
 risks and local ignored `reports/evidence/stabilization/` for receipts.
+
+The subsequent saved-checkpoint/history fix on this branch passed another
+`cargo check -p glyf-editor`, `cargo test --workspace` (67 tests) and
+`cargo build --workspace` on the same Windows toolchain. Its unit tests cover
+multiple edits, save checkpoints, Save As paths and independent tab histories.
+They do not replace physical tab, dialog, save-failure or Undo/Redo acceptance.
